@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/modules/album/providers/local_album_service.provider.dart';
 import 'package:immich_mobile/modules/album/services/local_album.service.dart';
+import 'package:immich_mobile/modules/backup/models/backup_album.model.dart';
+import 'package:immich_mobile/modules/settings/providers/app_settings.provider.dart';
+import 'package:immich_mobile/modules/settings/services/app_settings.service.dart';
+import 'package:immich_mobile/modules/settings/ui/asset_list_settings/asset_list_main_timeline.dart';
 import 'package:immich_mobile/shared/models/exif_info.dart';
 import 'package:immich_mobile/shared/models/store.dart';
 import 'package:immich_mobile/shared/models/user.dart';
@@ -343,8 +347,13 @@ final assetWatcher =
 
 final assetsProvider = StreamProvider.family<RenderList, int?>((ref, userId) {
   if (userId == null) return const Stream.empty();
-  final query = _commonFilterAndSort(
-    _assets(ref).where().ownerIdEqualToAnyChecksum(userId),
+  final query = _commonSort(
+    _mainTimelineFilter(
+      ref,
+      _commonFilter(
+        _assets(ref).where().ownerIdEqualToAnyChecksum(userId),
+      ),
+    ),
   );
   return renderListGenerator(query, ref);
 });
@@ -352,10 +361,15 @@ final assetsProvider = StreamProvider.family<RenderList, int?>((ref, userId) {
 final multiUserAssetsProvider =
     StreamProvider.family<RenderList, List<int>>((ref, userIds) {
   if (userIds.isEmpty) return const Stream.empty();
-  final query = _commonFilterAndSort(
-    _assets(ref)
-        .where()
-        .anyOf(userIds, (q, u) => q.ownerIdEqualToAnyChecksum(u)),
+  final query = _commonSort(
+    _mainTimelineFilter(
+      ref,
+      _commonFilter(
+        _assets(ref)
+            .where()
+            .anyOf(userIds, (q, u) => q.ownerIdEqualToAnyChecksum(u)),
+      ),
+    ),
   );
   return renderListGenerator(query, ref);
 });
@@ -365,28 +379,61 @@ QueryBuilder<Asset, Asset, QAfterSortBy>? getRemoteAssetQuery(WidgetRef ref) {
   if (userId == null) {
     return null;
   }
-  return ref
-      .watch(dbProvider)
-      .assets
-      .where()
-      .remoteIdIsNotNull()
-      .filter()
-      .ownerIdEqualTo(userId)
-      .isTrashedEqualTo(false)
-      .stackParentIdIsNull()
-      .sortByFileCreatedAtDesc();
+  return _commonSort(
+    ref
+        .watch(dbProvider)
+        .assets
+        .where()
+        .remoteIdIsNotNull()
+        .filter()
+        .ownerIdEqualTo(userId)
+        .isTrashedEqualTo(false)
+        .stackParentIdIsNull(),
+  );
 }
 
 IsarCollection<Asset> _assets(StreamProviderRef<RenderList> ref) =>
     ref.watch(dbProvider).assets;
 
-QueryBuilder<Asset, Asset, QAfterSortBy> _commonFilterAndSort(
+QueryBuilder<Asset, Asset, QAfterFilterCondition> _commonFilter(
   QueryBuilder<Asset, Asset, QAfterWhereClause> query,
 ) {
   return query
       .filter()
       .isArchivedEqualTo(false)
       .isTrashedEqualTo(false)
-      .stackParentIdIsNull()
-      .sortByFileCreatedAtDesc();
+      .stackParentIdIsNull();
+}
+
+QueryBuilder<Asset, Asset, QAfterFilterCondition> _mainTimelineFilter(
+  StreamProviderRef<RenderList> ref,
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> query,
+) {
+  final assetInTimeline = AssetsInTimeline.values[ref.read(
+    appSettingsServiceProvider.select(
+      (value) => value.getSetting(AppSettingsEnum.localAssetsInMainTimeline),
+    ),
+  )];
+
+  return query
+      .remoteIdIsNotNull()
+      .or()
+      .optional(
+        assetInTimeline == AssetsInTimeline.all,
+        (q) => q.localIdIsNotNull(),
+      )
+      .optional(
+        assetInTimeline == AssetsInTimeline.none,
+        (q) => q.localIdIsNull(),
+      )
+      .optional(
+        assetInTimeline == AssetsInTimeline.selected,
+        (q) => q.selectedForBackupEqualTo(BackupSelection.select),
+      );
+}
+
+QueryBuilder<Asset, Asset, QAfterSortBy> _commonSort(
+  QueryBuilder<Asset, Asset, QAfterFilterCondition> query,
+) {
+  return query.sortByFileCreatedAtDesc();
 }

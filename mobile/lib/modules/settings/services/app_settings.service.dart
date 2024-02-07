@@ -57,6 +57,7 @@ enum AppSettingsEnum<T> {
     null,
     false,
   ),
+  localAssetsInMainTimeline<int>(StoreKey.localAssetsInMainTimeline, null, 0),
   ;
 
   const AppSettingsEnum(this.storeKey, this.hiveKey, this.defaultValue);
