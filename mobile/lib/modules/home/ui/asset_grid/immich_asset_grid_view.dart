@@ -2,6 +2,7 @@ import 'dart:collection';
 import 'dart:developer';
 import 'dart:math';
 
+import 'package:auto_route/auto_route.dart';
 import 'package:collection/collection.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/extensions/collection_extensions.dart';
 import 'package:immich_mobile/modules/asset_viewer/providers/scroll_notifier.provider.dart';
 import 'package:immich_mobile/modules/home/ui/asset_grid/thumbnail_image.dart';
+import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/shared/models/asset.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
@@ -128,23 +130,44 @@ class ImmichAssetGridViewState extends State<ImmichAssetGridView> {
   }
 
   Widget _buildThumbnailOrPlaceholder(Asset asset, int index) {
+    final isSelected =
+        widget.selectionActive && _selectedAssets.contains(asset);
     return ThumbnailImage(
       asset: asset,
-      index: index,
-      loadAsset: widget.renderList.loadAsset,
-      totalAssets: widget.renderList.totalAssets,
-      multiselectEnabled: widget.selectionActive,
-      isSelected: widget.selectionActive && _selectedAssets.contains(asset),
-      onSelect: () => _selectAssets([asset]),
-      onDeselect: widget.canDeselect ||
-              widget.preselectedAssets == null ||
-              !widget.preselectedAssets!.contains(asset)
-          ? () => _deselectAssets([asset])
-          : null,
       useGrayBoxPlaceholder: true,
+      isSelected: isSelected,
+      multiselectEnabled: _selectedAssets.isNotEmpty,
       showStorageIndicator: widget.showStorageIndicator,
       heroOffset: widget.heroOffset,
       showStack: widget.showStack,
+      onTap: () {
+        if (_selectedAssets.isNotEmpty) {
+          if (isSelected) {
+            // Deselect widget if we can
+            if (widget.canDeselect ||
+                widget.preselectedAssets == null ||
+                !widget.preselectedAssets!.contains(asset)) {
+              _deselectAssets([asset]);
+            }
+          } else {
+            // Select the asset
+            _selectAssets([asset]);
+          }
+        } else {
+          context.pushRoute(
+            GalleryViewerRoute(
+              initialIndex: index,
+              renderList: widget.renderList,
+              heroOffset: widget.heroOffset,
+              showStack: widget.showStack,
+            ),
+          );
+        }
+      },
+      onLongPress: () {
+        _selectAssets([asset]);
+        HapticFeedback.heavyImpact();
+      },
     );
   }
 
