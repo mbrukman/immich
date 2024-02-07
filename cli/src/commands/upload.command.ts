@@ -8,7 +8,7 @@ import { access, constants, stat, unlink } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import { UploadFileRequest } from '@immich/sdk';
-import { chunk, zip } from 'lodash';
+import { chunk, zip } from 'lodash-es';
 import { AssetBulkUploadCheckResult } from '@immich/sdk';
 
 const zipDefined = zip as <T, U>(a: T[], b: U[]) => [T, U][];
