@@ -200,7 +200,10 @@ class ImmichImage extends StatelessWidget {
       // Precache the remote image since we are not using local images
       return precacheImage(
         remoteThumbnailProvider(
-            asset, type, {"x-immich-user-token": accessToken}),
+          asset,
+          type,
+          {"x-immich-user-token": accessToken},
+        ),
         context,
       );
     }
