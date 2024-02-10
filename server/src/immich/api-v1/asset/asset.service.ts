@@ -18,16 +18,21 @@ import {
 } from '@app/domain';
 import { ASSET_CHECKSUM_CONSTRAINT, AssetEntity, AssetType, LibraryType } from '@app/infra/entities';
 import { ImmichLogger } from '@app/infra/logger';
-import { Inject, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
+import { parse } from 'node:path';
 import { QueryFailedError } from 'typeorm';
 import { IAssetRepositoryV1 } from './asset-repository';
-import { AssetCore } from './asset.core';
 import { AssetBulkUploadCheckDto } from './dto/asset-check.dto';
 import { AssetSearchDto } from './dto/asset-search.dto';
 import { CheckExistingAssetsDto } from './dto/check-existing-assets.dto';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { GetAssetThumbnailDto, GetAssetThumbnailFormatEnum } from './dto/get-asset-thumbnail.dto';
-import { SearchPropertiesDto } from './dto/search-properties.dto';
 import { ServeFileDto } from './dto/serve-file.dto';
 import {
   AssetBulkUploadCheckResponseDto,
@@ -42,7 +47,6 @@ import { CuratedObjectsResponseDto } from './response-dto/curated-objects-respon
 @Injectable()
 export class AssetService {
   readonly logger = new ImmichLogger(AssetService.name);
-  private assetCore: AssetCore;
   private access: AccessCore;
 
   constructor(
@@ -53,7 +57,6 @@ export class AssetService {
     @Inject(ILibraryRepository) private libraryRepository: ILibraryRepository,
     @Inject(IUserRepository) private userRepository: IUserRepository,
   ) {
-    this.assetCore = new AssetCore(assetRepositoryV1, jobRepository);
     this.access = AccessCore.create(accessRepository);
   }
 
@@ -76,19 +79,13 @@ export class AssetService {
     try {
       const libraryId = await this.getLibraryId(auth, dto.libraryId);
       await this.access.requirePermission(auth, Permission.ASSET_UPLOAD, libraryId);
-      AssetCore.requireQuota(auth, file.size);
+      this.requireQuota(auth, file.size);
       if (livePhotoFile) {
         const livePhotoDto = { ...dto, assetType: AssetType.VIDEO, isVisible: false, libraryId };
-        livePhotoAsset = await this.assetCore.create(auth, livePhotoDto, livePhotoFile);
+        livePhotoAsset = await this.create(auth, livePhotoDto, livePhotoFile);
       }
 
-      const asset = await this.assetCore.create(
-        auth,
-        { ...dto, libraryId },
-        file,
-        livePhotoAsset?.id,
-        sidecarFile?.originalPath,
-      );
+      const asset = await this.create(auth, { ...dto, libraryId }, file, livePhotoAsset?.id, sidecarFile?.originalPath);
 
       await this.userRepository.updateUsage(auth.user.id, (livePhotoFile?.size || 0) + file.size);
 
@@ -116,7 +113,7 @@ export class AssetService {
     const userId = dto.userId || auth.user.id;
     await this.access.requirePermission(auth, Permission.TIMELINE_READ, userId);
     const assets = await this.assetRepositoryV1.getAllByUserId(userId, dto);
-    return assets.map((asset) => mapAsset(asset));
+    return assets.map((asset) => mapAsset(asset, { withStack: true }));
   }
 
   async serveThumbnail(auth: AuthDto, assetId: string, dto: GetAssetThumbnailDto): Promise<ImmichFileResponse> {
@@ -163,7 +160,8 @@ export class AssetService {
     const possibleSearchTerm = new Set<string>();
 
     const rows = await this.assetRepositoryV1.getSearchPropertiesByUserId(auth.user.id);
-    rows.forEach((row: SearchPropertiesDto) => {
+
+    for (const row of rows) {
       // tags
       row.tags?.map((tag: string) => possibleSearchTerm.add(tag?.toLowerCase()));
 
@@ -187,9 +185,9 @@ export class AssetService {
       possibleSearchTerm.add(row.city?.toLowerCase() || '');
       possibleSearchTerm.add(row.state?.toLowerCase() || '');
       possibleSearchTerm.add(row.country?.toLowerCase() || '');
-    });
+    }
 
-    return Array.from(possibleSearchTerm).filter((x) => x != null && x != '');
+    return [...possibleSearchTerm].filter((x) => x != null && x != '');
   }
 
   async getCuratedLocation(auth: AuthDto): Promise<CuratedLocationsResponseDto[]> {
@@ -249,18 +247,18 @@ export class AssetService {
 
   private getThumbnailPath(asset: AssetEntity, format: GetAssetThumbnailFormatEnum) {
     switch (format) {
-      case GetAssetThumbnailFormatEnum.WEBP:
+      case GetAssetThumbnailFormatEnum.WEBP: {
         if (asset.webpPath) {
           return asset.webpPath;
         }
         this.logger.warn(`WebP thumbnail requested but not found for asset ${asset.id}, falling back to JPEG`);
-
-      case GetAssetThumbnailFormatEnum.JPEG:
-      default:
+      }
+      case GetAssetThumbnailFormatEnum.JPEG: {
         if (!asset.resizePath) {
           throw new NotFoundException(`No thumbnail found for asset ${asset.id}`);
         }
         return asset.resizePath;
+      }
     }
   }
 
@@ -316,5 +314,59 @@ export class AssetService {
     }
 
     return library.id;
+  }
+
+  private async create(
+    auth: AuthDto,
+    dto: CreateAssetDto & { libraryId: string },
+    file: UploadFile,
+    livePhotoAssetId?: string,
+    sidecarPath?: string,
+  ): Promise<AssetEntity> {
+    const asset = await this.assetRepository.create({
+      ownerId: auth.user.id,
+      libraryId: dto.libraryId,
+
+      checksum: file.checksum,
+      originalPath: file.originalPath,
+
+      deviceAssetId: dto.deviceAssetId,
+      deviceId: dto.deviceId,
+
+      fileCreatedAt: dto.fileCreatedAt,
+      fileModifiedAt: dto.fileModifiedAt,
+      localDateTime: dto.fileCreatedAt,
+      deletedAt: null,
+
+      type: mimeTypes.assetType(file.originalPath),
+      isFavorite: dto.isFavorite,
+      isArchived: dto.isArchived ?? false,
+      duration: dto.duration || null,
+      isVisible: dto.isVisible ?? true,
+      livePhotoVideo: livePhotoAssetId === null ? null : ({ id: livePhotoAssetId } as AssetEntity),
+      resizePath: null,
+      webpPath: null,
+      thumbhash: null,
+      encodedVideoPath: null,
+      tags: [],
+      sharedLinks: [],
+      originalFileName: parse(file.originalName).name,
+      faces: [],
+      sidecarPath: sidecarPath || null,
+      isReadOnly: dto.isReadOnly ?? false,
+      isExternal: dto.isExternal ?? false,
+      isOffline: dto.isOffline ?? false,
+    });
+
+    await this.assetRepository.upsertExif({ assetId: asset.id, fileSizeInByte: file.size });
+    await this.jobRepository.queue({ name: JobName.METADATA_EXTRACTION, data: { id: asset.id, source: 'upload' } });
+
+    return asset;
+  }
+
+  private requireQuota(auth: AuthDto, size: number) {
+    if (auth.user.quotaSizeInBytes && auth.user.quotaSizeInBytes < auth.user.quotaUsageInBytes + size) {
+      throw new BadRequestException('Quota has been exceeded!');
+    }
   }
 }

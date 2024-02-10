@@ -3,6 +3,7 @@ import {
   AuditService,
   DatabaseService,
   IDeleteFilesJob,
+  IStorageRepository,
   JobName,
   JobService,
   LibraryService,
@@ -15,7 +16,7 @@ import {
   SystemConfigService,
   UserService,
 } from '@app/domain';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 
 @Injectable()
 export class AppService {
@@ -33,6 +34,7 @@ export class AppService {
     private storageService: StorageService,
     private userService: UserService,
     private databaseService: DatabaseService,
+    @Inject(IStorageRepository) private storageRepository: IStorageRepository,
   ) {}
 
   async init() {
@@ -70,7 +72,7 @@ export class AppService {
       [JobName.PERSON_CLEANUP]: () => this.personService.handlePersonCleanup(),
       [JobName.QUEUE_SIDECAR]: (data) => this.metadataService.handleQueueSidecar(data),
       [JobName.SIDECAR_DISCOVERY]: (data) => this.metadataService.handleSidecarDiscovery(data),
-      [JobName.SIDECAR_SYNC]: () => this.metadataService.handleSidecarSync(),
+      [JobName.SIDECAR_SYNC]: (data) => this.metadataService.handleSidecarSync(data),
       [JobName.SIDECAR_WRITE]: (data) => this.metadataService.handleSidecarWrite(data),
       [JobName.LIBRARY_SCAN_ASSET]: (data) => this.libraryService.handleAssetRefresh(data),
       [JobName.LIBRARY_SCAN]: (data) => this.libraryService.handleQueueAssetRefresh(data),

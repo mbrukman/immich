@@ -344,8 +344,6 @@ class ApiClient {
           return OAuthCallbackDto.fromJson(value);
         case 'OAuthConfigDto':
           return OAuthConfigDto.fromJson(value);
-        case 'OAuthConfigResponseDto':
-          return OAuthConfigResponseDto.fromJson(value);
         case 'PartnerResponseDto':
           return PartnerResponseDto.fromJson(value);
         case 'PathEntityType':
@@ -428,6 +426,8 @@ class ApiClient {
           return SystemConfigLibraryDto.fromJson(value);
         case 'SystemConfigLibraryScanDto':
           return SystemConfigLibraryScanDto.fromJson(value);
+        case 'SystemConfigLibraryWatchDto':
+          return SystemConfigLibraryWatchDto.fromJson(value);
         case 'SystemConfigLoggingDto':
           return SystemConfigLoggingDto.fromJson(value);
         case 'SystemConfigMachineLearningDto':
