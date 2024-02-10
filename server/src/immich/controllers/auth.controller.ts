@@ -79,7 +79,7 @@ export class AuthController {
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   logout(
-    @Req() req: Request,
+    @Req() request: Request,
     @Res({ passthrough: true }) res: Response,
     @Auth() auth: AuthDto,
   ): Promise<LogoutResponseDto> {
@@ -87,6 +87,6 @@ export class AuthController {
     res.clearCookie(IMMICH_AUTH_TYPE_COOKIE);
     res.clearCookie(IMMICH_IS_AUTHENTICATED);
 
-    return this.service.logout(auth, (req.cookies || {})[IMMICH_AUTH_TYPE_COOKIE]);
+    return this.service.logout(auth, (request.cookies || {})[IMMICH_AUTH_TYPE_COOKIE]);
   }
 }

@@ -12,28 +12,23 @@ import {
   spyOnConsole,
 } from '../../test/cli-test-utils';
 
-const mockPingServer = jest.fn(() => Promise.resolve({ data: { res: 'pong' } }));
-const mockUserInfo = jest.fn(() => Promise.resolve({ data: { email: 'admin@example.com' } }));
-
-jest.mock('@immich/sdk', () => {
+const mocks = vi.hoisted(() => {
   return {
-    ...jest.requireActual('@immich/sdk'),
-    UserApi: jest.fn().mockImplementation(() => {
-      return { getMyUserInfo: mockUserInfo };
-    }),
-    ServerInfoApi: jest.fn().mockImplementation(() => {
-      return { pingServer: mockPingServer };
-    }),
+    getMyUserInfo: vi.fn(() => Promise.resolve({ email: 'admin@example.com' })),
+    pingServer: vi.fn(() => Promise.resolve({ res: 'pong' })),
   };
+});
+
+vi.mock('./api.service', async (importOriginal) => {
+  const module = await importOriginal<typeof import('./api.service')>();
+  // @ts-expect-error this is only a partial implementation of the return value
+  module.ImmichApi.prototype.getMyUserInfo = mocks.getMyUserInfo;
+  module.ImmichApi.prototype.pingServer = mocks.pingServer;
+  return module;
 });
 
 describe('SessionService', () => {
   let sessionService: SessionService;
-  let consoleSpy: jest.SpyInstance;
-
-  beforeAll(() => {
-    consoleSpy = spyOnConsole();
-  });
 
   beforeEach(() => {
     deleteAuthFile();
@@ -53,7 +48,7 @@ describe('SessionService', () => {
     );
 
     await sessionService.connect();
-    expect(mockPingServer).toHaveBeenCalledTimes(1);
+    expect(mocks.pingServer).toHaveBeenCalledTimes(1);
   });
 
   it('should error if no auth file exists', async () => {
@@ -93,6 +88,8 @@ describe('SessionService', () => {
   });
 
   it('should delete auth file when logging out', async () => {
+    const consoleSpy = spyOnConsole();
+
     await createTestAuthFile(
       JSON.stringify({
         apiKey: TEST_IMMICH_API_KEY,
