@@ -280,25 +280,38 @@ class ImmichAssetGridViewState extends State<ImmichAssetGridView> {
                         .loadAssets(section.offset, section.totalCount),
               ),
             for (int i = 0; i < rows; i++)
-              scrolling
-                  ? _buildPlaceHolderRow(
-                      ValueKey(i),
-                      i + 1 == rows
-                          ? section.count - i * widget.assetsPerRow
-                          : widget.assetsPerRow,
-                      width,
-                      width,
-                    )
-                  : _buildAssetRow(
-                      ValueKey(i),
-                      context,
-                      assetsToRender.nestedSlice(
-                        i * widget.assetsPerRow,
-                        min((i + 1) * widget.assetsPerRow, section.count),
-                      ),
-                      section.offset + i * widget.assetsPerRow,
-                      width,
-                    ),
+              // Workaround for https://github.com/flutter/flutter/issues/80075
+              ColorFiltered(
+                colorFilter: const ColorFilter.matrix(<double>[
+                  1, 0, 0, 0, 0, // R
+                  0, 1, 0, 0, 0, // G
+                  0, 0, 1, 0, 0, // B
+                  0, 0, 0, 255, 0, // A
+                ]),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  switchOutCurve: Curves.fastOutSlowIn,
+                  child: scrolling
+                      ? _buildPlaceHolderRow(
+                          ValueKey(i),
+                          i + 1 == rows
+                              ? section.count - i * widget.assetsPerRow
+                              : widget.assetsPerRow,
+                          width,
+                          width,
+                        )
+                      : _buildAssetRow(
+                          ValueKey('asset$i'),
+                          context,
+                          assetsToRender.nestedSlice(
+                            i * widget.assetsPerRow,
+                            min((i + 1) * widget.assetsPerRow, section.count),
+                          ),
+                          section.offset + i * widget.assetsPerRow,
+                          width,
+                        ),
+                ),
+              ),
           ],
         );
       },
